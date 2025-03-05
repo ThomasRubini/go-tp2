@@ -2,33 +2,33 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
-	"time"
 )
 
 // Special node to reset counter. Does not do work
-func resetNode(nodeID int32, ch chan int, wantedNode *int32, resetFunction func(*int) bool) {
+func (r *Ring) resetNode(nodeID int32, wantedNode *int32, resetFunction func(*int) bool) {
 	for {
-		val := <-ch
+		val := <-r.dataChannel
 		if atomic.LoadInt32(wantedNode) == nodeID {
 			atomic.StoreInt32(wantedNode, 0) // reset
 
-			cont := resetFunction(&val) // call callback with final value
-			if !cont { // check if we should continue
+			cont := r.FinishedRound(&val) // call callback with final value
+			if !cont {                    // check if we should continue
 				break
 			}
 
-			ch <- val
+			r.dataChannel <- val
 		} else {
 			// We weren't the right node. Put it back for the correct node.
-			ch <- val
+			r.dataChannel <- val
 		}
 	}
 }
 
-func node(nodeID int32, ch chan int, wantedNode *int32, workFunction func(int) int) {
+func (r *Ring) workWrapper(nodeID int32, wantedNode *int32, workFunction func(int) int) {
 	for {
-		val := <-ch
+		val := <-r.dataChannel
 		if atomic.LoadInt32(wantedNode) == nodeID {
 			fmt.Println("Goroutine", nodeID, "received:", val)
 
@@ -36,39 +36,62 @@ func node(nodeID int32, ch chan int, wantedNode *int32, workFunction func(int) i
 			atomic.AddInt32(wantedNode, 1)
 
 			// Make work + pass to next
-			ch <- workFunction(val)
+			r.dataChannel <- r.Work(val)
 		} else {
 			// We weren't the right node. Put it back for the correct node.
-			ch <- val
+			r.dataChannel <- val
 		}
 	}
 }
 
-func work(value int) int {
-	return value + 5
+type Ring struct {
+	dataChannel   chan int
+	Work          func(int) int
+	FinishedRound func(*int) bool
+}
+
+func NewRing(nodes int) *Ring {
+	r := Ring{}
+	r.dataChannel = make(chan int)
+	var wantedNode int32 = 0
+
+	// Create nodes
+	for i := 0; i < nodes; i++ {
+		go r.workWrapper(int32(i), &wantedNode, r.Work)
+	}
+
+	// create reset node
+	go r.resetNode(int32(nodes), &wantedNode, r.FinishedRound)
+
+	return &r
+}
+
+func (r Ring) Start(value int) {
+	r.dataChannel <- value
 }
 
 func main() {
-	P := 5
-	ch := make(chan int)
-	var wantedNode int32 = 0
+	r := NewRing(10)
+	K := 5
+	var rounds int
 
-	for i := 0; i < P; i++ {
-		go node(int32(i), ch, &wantedNode, work)
+	r.Work = func(i int) int {
+		return i + 5
 	}
 
-	rounds := 0
-	K := 10
-	go resetNode(int32(P), ch, &wantedNode, func(i *int) bool {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	r.FinishedRound = func(i *int) bool {
 		rounds++
 		if rounds >= K {
 			fmt.Printf("Everything is finished ! Final value: %v\n", *i)
+			wg.Done()
 			return false
 		} else {
 			return true
 		}
-	})
+	}
 
-	ch <- 0
-	time.Sleep(100 * time.Second)
+	r.Start(0)
+	wg.Wait()
 }
