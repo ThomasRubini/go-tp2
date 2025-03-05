@@ -32,7 +32,7 @@ func (r *Ring) workWrapper(nodeID int32, wantedNode *int32, workFunction func(in
 		if atomic.LoadInt32(wantedNode) == nodeID {
 			fmt.Println("Goroutine", nodeID, "received:", val)
 
-			// Signify that the next node can take it
+			// Signal that the next node can take it
 			atomic.AddInt32(wantedNode, 1)
 
 			// Make work + pass to next
