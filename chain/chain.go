@@ -10,8 +10,6 @@ func main() {
 			value := <-ch
 			value++
 
-			println(value)
-
 			if value == N-1 {
 				println("FIN")
 				println(value)
