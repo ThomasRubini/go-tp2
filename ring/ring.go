@@ -7,7 +7,7 @@ import (
 )
 
 // Special node to reset counter. Does not do work
-func (r *Ring) resetNode(nodeID int32, wantedNode *int32, resetFunction func(*int) bool) {
+func (r *Ring) resetNode(nodeID int32, wantedNode *int32) {
 	for {
 		val := <-r.dataChannel
 		if atomic.LoadInt32(wantedNode) == nodeID {
@@ -26,7 +26,7 @@ func (r *Ring) resetNode(nodeID int32, wantedNode *int32, resetFunction func(*in
 	}
 }
 
-func (r *Ring) workWrapper(nodeID int32, wantedNode *int32, workFunction func(int) int) {
+func (r *Ring) workWrapper(nodeID int32, wantedNode *int32) {
 	for {
 		val := <-r.dataChannel
 		if atomic.LoadInt32(wantedNode) == nodeID {
@@ -57,11 +57,11 @@ func NewRing(nodes int) *Ring {
 
 	// Create nodes
 	for i := 0; i < nodes; i++ {
-		go r.workWrapper(int32(i), &wantedNode, r.Work)
+		go r.workWrapper(int32(i), &wantedNode)
 	}
 
 	// create reset node
-	go r.resetNode(int32(nodes), &wantedNode, r.FinishedRound)
+	go r.resetNode(int32(nodes), &wantedNode)
 
 	return &r
 }
